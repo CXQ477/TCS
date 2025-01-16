@@ -1,183 +1,178 @@
-class Game {
-    constructor() {
-        this.canvas = document.getElementById('gameCanvas');
-        this.ctx = this.canvas.getContext('2d');
+class Snake {
+    constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.gridSize = 20;
+        this.snake = [{x: 5, y: 5}];
+        this.direction = {x: 1, y: 0};
+        this.food = this.generateFood();
+        this.score = 0;
+        this.gameOver = false;
+        this.speed = 150;
         
         // 设置画布大小
         this.canvas.width = 400;
         this.canvas.height = 400;
         
-        // 初始化游戏对象
-        this.snake = new Snake(this.canvas);
-        this.food = new Food(this.canvas, this.snake);
+        // 初始化虚拟摇杆
+        this.initJoystick();
         
-        // 游戏状态
-        this.score = 0;
-        this.highScore = localStorage.getItem('snakeHighScore') || 0;
-        this.isRunning = false;
-        this.isPaused = false;
-        
-        // 初始化速度
-        this.speed = 150;
-        
-        // 绑定事件处理
-        this.bindEvents();
-        
-        // 更新高分显示
-        this.updateScoreDisplay();
-    }
-
-    bindEvents() {
-        // 键盘控制
-        document.addEventListener('keydown', (e) => {
-            if (!this.isRunning) return;
-            
-            switch(e.key) {
-                case 'ArrowUp':
-                case 'w':
-                case 'W':
-                    this.snake.changeDirection('up');
-                    break;
-                case 'ArrowDown':
-                case 's':
-                case 'S':
-                    this.snake.changeDirection('down');
-                    break;
-                case 'ArrowLeft':
-                case 'a':
-                case 'A':
-                    this.snake.changeDirection('left');
-                    break;
-                case 'ArrowRight':
-                case 'd':
-                case 'D':
-                    this.snake.changeDirection('right');
-                    break;
-                case ' ':
-                    this.togglePause();
-                    break;
-            }
-        });
-
-        // 按钮控制
-        document.getElementById('startBtn').addEventListener('click', () => this.start());
-        document.getElementById('pauseBtn').addEventListener('click', () => this.togglePause());
-        document.getElementById('restartBtn').addEventListener('click', () => this.restart());
-        
-        // 速度控制
-        document.getElementById('gameSpeed').addEventListener('change', (e) => {
-            switch(e.target.value) {
-                case 'slow':
-                    this.speed = 200;
-                    break;
-                case 'normal':
-                    this.speed = 150;
-                    break;
-                case 'fast':
-                    this.speed = 100;
-                    break;
-            }
-        });
-    }
-
-    start() {
-        if (!this.isRunning) {
-            this.isRunning = true;
-            this.gameLoop();
-        }
-    }
-
-    togglePause() {
-        this.isPaused = !this.isPaused;
-        if (!this.isPaused) {
-            this.gameLoop();
-        }
-    }
-
-    restart() {
-        this.snake.reset();
-        this.food.spawn();
-        this.score = 0;
-        this.updateScoreDisplay();
-        this.isRunning = true;
-        this.isPaused = false;
+        // 开始游戏循环
         this.gameLoop();
     }
 
-    gameLoop() {
-        if (!this.isRunning || this.isPaused) return;
+    initJoystick() {
+        const joystickThumb = document.getElementById('joystick-thumb');
+        const joystickBase = document.getElementById('joystick-base');
+        let isDragging = false;
+        let startX, startY;
+        
+        const handleStart = (e) => {
+            const touch = e.type === 'mousedown' ? e : e.touches[0];
+            isDragging = true;
+            startX = touch.clientX - joystickThumb.offsetLeft;
+            startY = touch.clientY - joystickThumb.offsetTop;
+        };
+        
+        const handleMove = (e) => {
+            if (!isDragging) return;
+            e.preventDefault();
+            
+            const touch = e.type === 'mousemove' ? e : e.touches[0];
+            const baseRect = joystickBase.getBoundingClientRect();
+            const centerX = baseRect.left + baseRect.width / 2;
+            const centerY = baseRect.top + baseRect.height / 2;
+            
+            let deltaX = touch.clientX - centerX;
+            let deltaY = touch.clientY - centerY;
+            
+            // 计算角度和距离
+            const angle = Math.atan2(deltaY, deltaX);
+            const distance = Math.min(50, Math.sqrt(deltaX * deltaX + deltaY * deltaY));
+            
+            // 更新摇杆位置
+            const thumbX = Math.cos(angle) * distance;
+            const thumbY = Math.sin(angle) * distance;
+            
+            joystickThumb.style.transform = `translate(${thumbX}px, ${thumbY}px)`;
+            
+            // 更新蛇的方向
+            if (Math.abs(deltaX) > Math.abs(deltaY)) {
+                this.direction = {x: deltaX > 0 ? 1 : -1, y: 0};
+            } else {
+                this.direction = {x: 0, y: deltaY > 0 ? 1 : -1};
+            }
+        };
+        
+        const handleEnd = () => {
+            isDragging = false;
+            joystickThumb.style.transform = 'translate(0px, 0px)';
+        };
+        
+        // 添加触摸和鼠标事件监听
+        joystickThumb.addEventListener('mousedown', handleStart);
+        joystickThumb.addEventListener('touchstart', handleStart);
+        document.addEventListener('mousemove', handleMove);
+        document.addEventListener('touchmove', handleMove, { passive: false });
+        document.addEventListener('mouseup', handleEnd);
+        document.addEventListener('touchend', handleEnd);
+    }
 
-        this.update();
-        this.draw();
-
-        setTimeout(() => this.gameLoop(), this.speed);
+    generateFood() {
+        const x = Math.floor(Math.random() * (this.canvas.width / this.gridSize));
+        const y = Math.floor(Math.random() * (this.canvas.height / this.gridSize));
+        return {x, y};
     }
 
     update() {
-        this.snake.move();
+        if (this.gameOver) return;
 
-        // 检查是否吃到食物
-        if (this.snake.body[0].x === this.food.x && this.snake.body[0].y === this.food.y) {
-            this.snake.eat();
-            this.food.spawn();
-            this.score += 10;
-            this.updateScoreDisplay();
-        }
+        // 移动蛇
+        const head = {
+            x: this.snake[0].x + this.direction.x,
+            y: this.snake[0].y + this.direction.y
+        };
 
         // 检查碰撞
-        if (this.snake.checkCollision()) {
-            this.gameOver();
+        if (this.checkCollision(head)) {
+            this.gameOver = true;
+            return;
         }
+
+        this.snake.unshift(head);
+
+        // 检查是否吃到食物
+        if (head.x === this.food.x && head.y === this.food.y) {
+            this.score += 10;
+            document.getElementById('score').textContent = `分数: ${this.score}`;
+            this.food = this.generateFood();
+            // 加快游戏速度
+            this.speed = Math.max(50, this.speed - 5);
+        } else {
+            this.snake.pop();
+        }
+    }
+
+    checkCollision(head) {
+        // 检查墙壁碰撞
+        if (head.x < 0 || head.x >= this.canvas.width / this.gridSize ||
+            head.y < 0 || head.y >= this.canvas.height / this.gridSize) {
+            return true;
+        }
+
+        // 检查自身碰撞
+        return this.snake.some(segment => segment.x === head.x && segment.y === head.y);
     }
 
     draw() {
-        // 清空画布
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        
-        // 绘制网格
-        this.drawGrid();
-        
-        // 绘制蛇和食物
-        this.snake.draw();
-        this.food.draw();
+
+        // 绘制蛇
+        this.ctx.fillStyle = '#4CAF50';
+        this.snake.forEach(segment => {
+            this.ctx.fillRect(
+                segment.x * this.gridSize,
+                segment.y * this.gridSize,
+                this.gridSize - 1,
+                this.gridSize - 1
+            );
+        });
+
+        // 绘制食物
+        this.ctx.fillStyle = '#FF5722';
+        this.ctx.fillRect(
+            this.food.x * this.gridSize,
+            this.food.y * this.gridSize,
+            this.gridSize - 1,
+            this.gridSize - 1
+        );
+
+        // 游戏结束显示
+        if (this.gameOver) {
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            this.ctx.fillStyle = '#fff';
+            this.ctx.font = '30px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText('游戏结束!', this.canvas.width / 2, this.canvas.height / 2);
+            this.ctx.font = '20px Arial';
+            this.ctx.fillText(
+                `最终得分: ${this.score}`,
+                this.canvas.width / 2,
+                this.canvas.height / 2 + 40
+            );
+        }
     }
 
-    drawGrid() {
-        this.ctx.strokeStyle = '#eee';
-        this.ctx.lineWidth = 1;
-
-        for (let x = 0; x < this.canvas.width; x += this.snake.gridSize) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(x, 0);
-            this.ctx.lineTo(x, this.canvas.height);
-            this.ctx.stroke();
-        }
-
-        for (let y = 0; y < this.canvas.height; y += this.snake.gridSize) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(0, y);
-            this.ctx.lineTo(this.canvas.width, y);
-            this.ctx.stroke();
-        }
-    }
-
-    gameOver() {
-        this.isRunning = false;
-        if (this.score > this.highScore) {
-            this.highScore = this.score;
-            localStorage.setItem('snakeHighScore', this.highScore);
-        }
-        this.updateScoreDisplay();
-        alert(`游戏结束！\n得分：${this.score}\n最高分：${this.highScore}`);
-    }
-
-    updateScoreDisplay() {
-        document.getElementById('score').textContent = this.score;
-        document.getElementById('highScore').textContent = this.highScore;
+    gameLoop() {
+        this.update();
+        this.draw();
+        setTimeout(() => requestAnimationFrame(() => this.gameLoop()), this.speed);
     }
 }
 
 // 初始化游戏
 window.onload = () => {
-    const game = new Game();
-};
+    const canvas = document.getElementById('gameCanvas');
+    new Snake(canvas);
+}; 
